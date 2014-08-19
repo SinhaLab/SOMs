@@ -1,0 +1,91 @@
+#Large Super SOM 
+
+```{r}
+library(ggplot2)
+library(reshape)
+library(plyr)
+library(kohonen)
+library(goseq)
+library(GO.db)
+```
+
+
+```{r}
+
+mostDEgenes <- read.csv("../data/allGeneListBothGenotypes_analysis5b.csv")
+
+mostDEgenes <- mostDEgenes[c(7, 2, 1, 4)] #keep only needed columns (gene, genotype, type, mean)
+
+head(mostDEgenes)
+
+#Change from long to wide data format
+mostDEgene.long <- cast(mostDEgenes, genotype + gene ~ type, value.var = mean, fun.aggregate = "mean")  #why did I have to specify "mean" here? Are there duplicates of types? Double check later. 
+
+head(mostDEgene.long)
+
+mostDEgene.long <- as.data.frame(mostDEgene.long) 
+names(mostDEgene.long)
+
+scale_data <- as.matrix(t(scale(t(mostDEgene.long[c(3:8)]))))
+head(scale_data) 
+#Principle Component Analysis
+pca <- prcomp(scale_data, scale=TRUE) 
+
+summary(pca) 
+
+pca.scores <- data.frame(pca$x)
+
+data.val <- cbind(mostDEgene.long, scale_data, pca.scores) 
+
+head(data.val)
+```
+
+
+##Visualizing the PCA
+
+Looks to be three major clusters. 
+
+```{r}
+p <- ggplot(data.val, aes(PC1, PC2)) 
+p + geom_point()
+```
+
+
+##SuperSOM
+
+```{r}
+set.seed(6)
+names(data.val)
+
+superSomData <- data.val[,c(1:8)]
+
+tf2 <- subset(superSomData, genotype == "tf2", select = 3:8)
+wt <- subset(superSomData, genotype == "wt", select = 3:8)
+
+wt <- as.matrix(wt)
+tf2 <- as.matrix(tf2)
+
+sc.wt <- t(scale(t(wt)))
+sc.tf2 <- t(scale(t(tf2)))
+
+all.data <- list(sc.wt,sc.tf2)
+
+ssom <- supersom(all.data, somgrid(6, 6, "hexagonal"),weights=c(0.5,0.5)) 
+
+summary(ssom)
+par(mfrow = c(3, 2))
+plot(ssom, type ="changes")
+plot(ssom, type = "codes")
+plot(ssom, type = "counts")
+plot(ssom, type = "quality")
+
+data.val <- cbind(data.val,ssom$unit.classif,ssom$distances)
+
+head(data.val)
+
+write.table(data.val, file="../data/ssom.data.analysis5d.txt")
+```
+
+###Visualization 
+
+Use the file you wrote out above with the `superSOMtutorial.Rmd` script to look at clusters further. 

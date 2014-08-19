@@ -1,0 +1,153 @@
+#Getting the most sig. differentiated genes between tissue
+
+##Purpose
+This is using the basic some with both genotypes.  There are two identical ITAGs represented for each tissue type, one for each genotype. Because this is a basic SOM, the genes are free to be in any cluster, as opposed to in superSOMs where the same ITAG are forced to the same cluster.  
+
+##Required Libraries
+
+```{r}
+library(ggplot2)
+library(reshape)
+library(kohonen)
+```
+
+Self Organizing Maps 
+========================================================
+
+##1.pca.R
+
+First read in file that came from mostSigDEgenes.Rmd.  This is a list of genes from all DE analysis in WT and *tf2*. They were all cancatenated, then duplicate genes were removed.  In addition the mean was calculated from the replicates of each type. 
+
+The first step is to get it into the right format. First column being the genes, while the subsequent columns are the different libraries (type).
+
+```{r}
+mostDEgenes <- read.csv("../data/allGeneListBothGenotypes_analysis5b.csv")
+head(mostDEgenes)
+
+mostDEgenes <- mostDEgenes[c(7, 1, 2, 4)] #keep only needed columns (gene, type, mean)
+
+#Change from long to wide data format
+mostDEgene.long <- cast(mostDEgenes, genotype + gene ~ type, value.var = mean, fun.aggregate = "mean")  
+mostDEgene.long <- as.data.frame(mostDEgene.long)  
+```
+
+At this point I am going to subset on genotype and scale *seperately* before adding them back together. 
+
+```{r}
+wt <- subset(mostDEgene.long, genotype == "wt")
+tf2 <- subset(mostDEgene.long, genotype == "tf2")
+
+scale_data.wt <- as.matrix(t(scale(t(wt[c(3:8)]))))#transformation.
+scale_data.tf2 <- as.matrix(t(scale(t(tf2[c(3:8)]))))#transformation.
+scale_data <- rbind(scale_data.wt, scale_data.tf2)
+```
+
+```{r}
+#Principle Component Analysis
+pca <- prcomp(scale_data, scale=TRUE) 
+
+summary(pca) 
+
+pca.scores <- data.frame(pca$x)
+
+data.val <- cbind(mostDEgene.long, scale_data, pca.scores) 
+
+```
+
+##Visualizing the PCA
+
+Looks to be three major clusters. 
+
+```{r}
+p <- ggplot(data.val, aes(PC1, PC2)) 
+p + geom_point(alpha = .6)
+```
+
+------------
+
+*I am skipping the large Map and going straight to the small*
+
+2. Self Organizing Map- Small (3,2)
+-----------------------------
+
+The size of the map is something that may cause differences in the genes that are clustered.  Using a small map size (3,2), I found they cluster in according to tissue type. See below.
+
+```{r}
+som.data <- as.matrix(data.val[,c(9:14)])
+head(som.data)
+set.seed(5)
+
+som <- som(data=som.data, somgrid(3,2,"hexagonal")) #set SOM size
+summary(som)
+```
+
+###Training Plot ("changes") - Small
+
+This shows a hundred iterations.
+
+```{r}
+plot(som, type ="changes")
+```
+
+###Code Plot - Small
+
+Here with the small map, each tissue has a tissue specific cluster. 
+
+```{r}
+plot(som, type = "codes")
+```
+
+###Count Plot - Small
+
+This tells you how many genes are in each of the clusters. 
+
+```{r}
+plot(som, type = "counts")
+```
+
+###Distance Neighbour Plot- Small
+
+This is sometimes called the "U-Matrix", it can help identify further clustering. Areas of low neighbour distance indicate groups of nodes that are similar and the further apart nodes indicate natural "borders" in the map. 
+
+```{r}
+plot(som, type="dist.neighbours")
+```
+
+###Heatmaps - Small 
+
+This shows the distribution of each type of tissue.  This doesn't really work too well when the the map is so small. Bother is the only tissue type that contributes to two clusters. 
+
+```{r}
+head(som$codes)
+som$data <- data.frame(som$data) #changed to dataframe to extract column names easier. 
+
+#This is just a loop that plots the distribution of each 
+#tissue type across the map. 
+for (i in 1:6){
+  plot(som, type = "property", property = som$codes[,i], main=names(som$data)[i])
+  print(plot)
+  }
+```
+
+Output
+```{r}
+data.val.small <- cbind(data.val,som$unit.classif,som$distances)
+#Make sure that there is just one of each value som$unit.classif and distances column. 
+names(data.val.small)
+
+summary(data.val.small)
+```
+
+##Visualize back to PC space
+
+```{r}
+plot.data <- data.val.small
+names(plot.data)
+
+p <- ggplot(plot.data, aes(PC1, PC2, colour=factor(som$unit.classif))) #use unit.classif for smaller dataset
+p + geom_point(alpha = .6) + facet_grid(.~genotype) + theme_bw()
+```
+
+##References
+
+1. [R self Organizing map tutorial](http://www.r-bloggers.com/self-organising-maps-for-customer-segmentation-using-r/)
